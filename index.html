@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCR Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root {
+  --bg:       #111210;
+  --surface:  #1a1c19;
+  --surface2: #222420;
+  --border:   #2e3029;
+  --border2:  #3a3d35;
+  --text:     #e8e6df;
+  --muted:    #8a8980;
+  --faint:    #4a4c44;
+  --amber:    #d4943a;
+  --amber-l:  rgba(212,148,58,0.12);
+  --teal:     #4aab8c;
+  --teal-l:   rgba(74,171,140,0.12);
+  --red:      #c96060;
+  --red-l:    rgba(201,96,96,0.10);
+  --r: 10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px 80px;
+}
+
+/* grain overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0; opacity: 0.6;
+}
+
+.wrap {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 620px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+/* ── HEADER ── */
+.hdr { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.hdr-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.hdr-title {
+  font-family: 'Fraunces', serif;
+  font-size: 28px; font-weight: 600; letter-spacing: -0.5px;
+  color: var(--text); line-height: 1.1;
+}
+.hdr-title em { font-style: italic; color: var(--amber); }
+.hdr-sub { margin-top: 6px; font-size: 13px; color: var(--muted); font-weight: 300; }
+.chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 20px;
+  background: var(--amber-l); border: 1px solid rgba(212,148,58,0.25);
+  color: var(--amber); white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── GOOGLE AUTH ── */
+.auth-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 15px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); gap: 12px;
+}
+.auth-info { display: flex; align-items: center; gap: 9px; }
+.auth-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex-shrink: 0; transition: all .3s; }
+.auth-dot.on { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+.auth-text { font-size: 12px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+.btn-auth {
+  padding: 7px 14px; border-radius: 7px;
+  border: 1px solid var(--border2); background: var(--surface2);
+  color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all .15s; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.btn-auth:hover { border-color: var(--teal); color: var(--teal); }
+.btn-auth.on { border-color: rgba(74,171,140,0.4); color: var(--teal); }
+
+/* ── DROP ZONE ── */
+.drop {
+  border: 1.5px dashed var(--border2);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: 44px 24px;
+  text-align: center; cursor: pointer;
+  transition: all .2s; position: relative; overflow: hidden;
+}
+.drop:hover, .drop.over { border-color: var(--amber); background: var(--amber-l); }
+.drop.has-img { padding: 10px; border-style: solid; border-color: var(--border); cursor: default; }
+.drop-ico { font-size: 38px; margin-bottom: 14px; display: block; }
+.drop-title { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 400; margin-bottom: 5px; }
+.drop-sub { font-size: 12px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+#fi { display: none; }
+.prev-img { max-width: 100%; max-height: 300px; border-radius: 8px; display: block; margin: 0 auto; object-fit: contain; }
+.drop-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: 8px; display: none; }
+.drop-overlay.on { display: block; }
+.scan-beam {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--amber) 40%, #fff 50%, var(--amber) 60%, transparent 100%);
+  box-shadow: 0 0 16px var(--amber);
+  animation: beam 1.8s ease-in-out infinite;
+}
+@keyframes beam { 0%{top:0;opacity:0} 8%{opacity:1} 92%{opacity:1} 100%{top:100%;opacity:0} }
+
+.paste-note {
+  text-align: center; font-size: 11px; color: var(--faint);
+  font-family: 'IBM Plex Mono', monospace;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: -10px;
+}
+.paste-note kbd {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 1px 6px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted);
+}
+
+/* ── ANALYZE BUTTON ── */
+.btn-analyze {
+  width: 100%; padding: 14px;
+  border-radius: var(--r); border: none;
+  background: var(--amber); color: #1a1400;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-analyze:hover { background: #e0a040; transform: translateY(-1px); box-shadow: 0 8px 28px rgba(212,148,58,.3); }
+.btn-analyze:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+.spin { width: 16px; height: 16px; border: 2px solid rgba(26,20,0,.3); border-top-color: #1a1400; border-radius: 50%; animation: rot .7s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ── STATUS ── */
+.msg { display: none; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; align-items: center; gap: 8px; }
+.msg.ok  { display:flex; background: var(--teal-l); border:1px solid rgba(74,171,140,.3); color: var(--teal); }
+.msg.err { display:flex; background: var(--red-l); border:1px solid rgba(201,96,96,.3); color: var(--red); }
+.msg.inf { display:flex; background: var(--amber-l); border:1px solid rgba(212,148,58,.3); color: var(--amber); }
+
+/* ── RESULT PANEL ── */
+.result-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden;
+  animation: up .3s cubic-bezier(.16,1,.3,1);
+}
+@keyframes up { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+
+.rp-head {
+  padding: 14px 18px;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.rp-head-l { display: flex; align-items: center; gap: 10px; }
+.mode-tabs { display: flex; gap: 6px; }
+.tab {
+  padding: 5px 14px; border-radius: 20px;
+  border: 1px solid var(--border2);
+  background: transparent; color: var(--muted);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s;
+}
+.tab.cal.active { background: var(--amber-l); border-color: rgba(212,148,58,.4); color: var(--amber); }
+.tab.con.active { background: var(--teal-l); border-color: rgba(74,171,140,.4); color: var(--teal); }
+.tab:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+
+.btn-new {
+  background: none; border: none; color: var(--faint);
+  font-size: 11px; font-family: 'IBM Plex Mono', monospace;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+.btn-new:hover { color: var(--muted); }
+
+/* ── FIELDS ── */
+.fields { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.frow { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: center; }
+.flabel { font-size: 10px; font-family: 'IBM Plex Mono', monospace; color: var(--faint); text-transform: uppercase; letter-spacing: .6px; }
+.finput {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 11px;
+  font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: var(--text);
+  width: 100%; transition: border-color .15s;
+}
+.finput:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(212,148,58,.1); }
+.finput.teal:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(74,171,140,.1); }
+.with-tag { display: flex; gap: 8px; align-items: center; }
+.with-tag .finput { flex: 1; }
+.tag { font-family: 'IBM Plex Mono', monospace; font-size: 9px; padding: 3px 8px; border-radius: 20px; background: var(--teal-l); border: 1px solid rgba(74,171,140,.3); color: var(--teal); white-space: nowrap; letter-spacing: .4px; }
+.divr { height: 1px; background: var(--border); margin: 2px 0; }
+
+/* ── ACTIONS ── */
+.actions { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+.btn-main {
+  flex: 1; padding: 11px 16px; border-radius: 8px; border: none;
+  font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.btn-main.cal { background: var(--amber); color: #1a1400; }
+.btn-main.cal:hover { background: #e0a040; transform: translateY(-1px); box-shadow: 0 5px 18px rgba(212,148,58,.3); }
+.btn-main.con { background: var(--teal); color: #071a15; }
+.btn-main.con:hover { transform: translateY(-1px); box-shadow: 0 5px 18px rgba(74,171,140,.3); }
+.btn-main:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-sec {
+  padding: 11px 16px; border-radius: 8px;
+  border: 1px solid var(--border2); background: var(--surface2);
+  color: var(--muted); font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-sec:hover { border-color: var(--amber); color: var(--amber); }
+
+/* ── DETECTED BADGE ── */
+.detected-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--muted);
+}
+.det-badge { padding: 2px 9px; border-radius: 20px; font-size: 10px; letter-spacing: .4px; }
+.det-badge.cal { background: var(--amber-l); color: var(--amber); border: 1px solid rgba(212,148,58,.3); }
+.det-badge.con { background: var(--teal-l); color: var(--teal); border: 1px solid rgba(74,171,140,.3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="hdr-top">
+      <div>
+        <div class="hdr-title">OCR <em>Hub</em></div>
+        <div class="hdr-sub">Sube cualquier imagen · la IA detecta el contenido · actúa</div>
+      </div>
+      <div class="chip">v1.0</div>
+    </div>
+  </div>
+
+  <!-- GOOGLE AUTH -->
+  <div class="auth-row">
+    <div class="auth-info">
+      <div class="auth-dot" id="authDot"></div>
+      <div class="auth-text" id="authText">Google Contacts: no conectado</div>
+    </div>
+    <button class="btn-auth" id="btnAuth" onclick="toggleAuth()">
+      <svg width="13" height="13" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+      Conectar Google
+    </button>
+  </div>
+
+  <!-- DROP ZONE -->
+  <div class="drop" id="drop" onclick="handleDropClick(event)">
+    <div class="drop-overlay" id="scanOverlay"><div class="scan-beam"></div></div>
+    <span class="drop-ico" id="dIco">🔍</span>
+    <div class="drop-title" id="dTitle">Arrastra o selecciona una imagen</div>
+    <div class="drop-sub" id="dSub">Tarjeta · formulario · captura · LinkedIn · cualquier formato</div>
+    <img class="prev-img" id="prevImg" style="display:none">
+    <input type="file" id="fi" accept="image/*">
+  </div>
+
+  <div class="paste-note">
+    <kbd>Ctrl</kbd><kbd>V</kbd> para pegar desde portapapeles
+  </div>
+
+  <!-- ANALYZE -->
+  <button class="btn-analyze" id="btnAn" disabled onclick="analyze()">
+    <span id="anIco">✦</span>
+    <span id="anTxt">Analizar imagen</span>
+  </button>
+
+  <div class="msg" id="msg"></div>
+
+  <!-- RESULT PANEL -->
+  <div class="result-panel" id="panel" style="display:none">
+
+    <!-- detected -->
+    <div class="detected-row" id="detRow"></div>
+
+    <!-- tabs -->
+    <div class="rp-head">
+      <div class="mode-tabs" id="tabs"></div>
+      <button class="btn-new" onclick="reset()">✕ Nueva imagen</button>
+    </div>
+
+    <!-- calendar fields -->
+    <div id="viewCal" style="display:none">
+      <div class="fields">
+        <div class="frow"><div class="flabel">Título</div><input class="finput" id="c_title" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Fecha</div><input class="finput" id="c_date" type="date" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Hora inicio</div><input class="finput" id="c_start" type="time" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Hora fin</div><input class="finput" id="c_end" type="time" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Ubicación</div><input class="finput" id="c_loc" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Notas</div><input class="finput" id="c_desc" type="text" placeholder="—"></div>
+      </div>
+      <div class="actions">
+        <button class="btn-main cal" onclick="openCalendar()">📅 Abrir en Google Calendar</button>
+      </div>
+    </div>
+
+    <!-- contact fields -->
+    <div id="viewCon" style="display:none">
+      <div class="fields">
+        <div class="frow"><div class="flabel">Nombre</div><input class="finput teal" id="p_nombre" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Primer apellido</div><input class="finput teal" id="p_ap1" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Segundo apellido</div><input class="finput teal" id="p_ap2" type="text" placeholder="—"></div>
+        <div class="divr"></div>
+        <div class="frow"><div class="flabel">Empresa</div><input class="finput teal" id="p_empresa" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Cargo</div><input class="finput teal" id="p_cargo" type="text" placeholder="—"></div>
+        <div class="divr"></div>
+        <div class="frow"><div class="flabel">DNI / NIE</div><input class="finput teal" id="p_dni" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">F. nacimiento</div><input class="finput teal" id="p_bday" type="text" placeholder="dd/mm/aaaa"></div>
+        <div class="divr"></div>
+        <div class="frow">
+          <div class="flabel">Teléfono</div>
+          <div class="with-tag"><input class="finput teal" id="p_tel" type="text" placeholder="—"><span class="tag">particular</span></div>
+        </div>
+        <div class="frow">
+          <div class="flabel">Email</div>
+          <div class="with-tag"><input class="finput teal" id="p_email" type="text" placeholder="—"><span class="tag">particular</span></div>
+        </div>
+        <div class="frow"><div class="flabel">Web</div><input class="finput teal" id="p_web" type="text" placeholder="—"></div>
+        <div class="divr"></div>
+        <div class="frow"><div class="flabel">Dirección</div><input class="finput teal" id="p_dir" type="text" placeholder="—"></div>
+        <div class="frow"><div class="flabel">Notas</div><input class="finput teal" id="p_notas" type="text" placeholder="—"></div>
+      </div>
+      <div class="actions">
+        <button class="btn-sec" onclick="downloadVcf()">📥 .vcf</button>
+        <button class="btn-main con" id="btnCreate" onclick="createContact()">✚ Crear en Google Contacts</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const CLIENT_ID = '195592023385-uaq0pt71g4uo1gkhbdetltghgkh4nfp3.apps.googleusercontent.com';
+let token = null, tokenClient = null;
+let imgB64 = null, imgMime = 'image/png';
+let currentMode = 'cal'; // 'cal' | 'con'
+
+// ── GOOGLE OAUTH ────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  const t = setInterval(() => {
+    if (window.google?.accounts?.oauth2) {
+      clearInterval(t);
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/contacts',
+        callback: r => {
+          if (r.error) { showMsg('err', 'Error Google: ' + r.error); return; }
+          token = r.access_token;
+          setAuth(true);
+        }
+      });
+    }
+  }, 200);
+});
+
+function toggleAuth() {
+  if (token) { google.accounts.oauth2.revoke(token, ()=>{}); token = null; setAuth(false); }
+  else if (tokenClient) tokenClient.requestAccessToken();
+  else showMsg('err', 'Google Sign-In no cargó aún. Espera un momento.');
+}
+
+function setAuth(on) {
+  document.getElementById('authDot').className = 'auth-dot' + (on ? ' on' : '');
+  document.getElementById('authText').textContent = on ? 'Google Contacts: conectado' : 'Google Contacts: no conectado';
+  const b = document.getElementById('btnAuth');
+  b.className = 'btn-auth' + (on ? ' on' : '');
+  b.innerHTML = on
+    ? '<svg width="13" height="13" viewBox="0 0 18 18"><path fill="#4aab8c" d="M7 14L2 9l1.4-1.4L7 11.2l7.6-7.6L16 5z"/></svg> Desconectar'
+    : '<svg width="13" height="13" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.163 6.656 3.58 9 3.58z"/></svg> Conectar Google';
+}
+
+// ── IMAGE LOADING ───────────────────────────────────────────────────────────
+function handleDropClick(e) {
+  if (!document.getElementById('drop').classList.contains('has-img'))
+    document.getElementById('fi').click();
+}
+
+const drop = document.getElementById('drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) loadImg(f); });
+document.getElementById('fi').addEventListener('change', e => { if (e.target.files[0]) loadImg(e.target.files[0]); });
+document.addEventListener('paste', e => {
+  for (const it of e.clipboardData?.items||[])
+    if (it.type.startsWith('image/')) { loadImg(it.getAsFile()); break; }
+});
+
+function loadImg(file) {
+  imgMime = file.type || 'image/png';
+  const r = new FileReader();
+  r.onload = ev => {
+    imgB64 = ev.target.result.split(',')[1];
+    drop.classList.add('has-img');
+    ['dIco','dTitle','dSub'].forEach(id => document.getElementById(id).style.display = 'none');
+    const img = document.getElementById('prevImg');
+    img.src = ev.target.result; img.style.display = 'block';
+    document.getElementById('btnAn').disabled = false;
+    hideMsg();
+  };
+  r.readAsDataURL(file);
+}
+
+// ── ANALYZE ─────────────────────────────────────────────────────────────────
+async function analyze() {
+  if (!imgB64) return;
+  const btn = document.getElementById('btnAn');
+  btn.disabled = true;
+  document.getElementById('anTxt').textContent = 'Analizando...';
+  document.getElementById('anIco').innerHTML = '<div class="spin"></div>';
+  document.getElementById('scanOverlay').classList.add('on');
+  document.getElementById('panel').style.display = 'none';
+  hideMsg();
+
+  const today = new Date().toLocaleDateString('es-ES', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const prompt = `Eres un asistente experto en extracción de datos de imágenes. Hoy es ${today}.
+
+Analiza esta imagen con atención. Puede contener:
+- Datos de una persona (nombre, teléfono, email, dirección, empresa, cargo, DNI, fecha nacimiento...)
+- Información de un evento o cita (fecha, hora, lugar, título, descripción...)
+- Ambas cosas a la vez
+
+Devuelve ÚNICAMENTE este JSON (sin texto extra, sin markdown):
+{
+  "tipo": "contacto" | "evento" | "ambos",
+  "contacto": {
+    "nombre": "", "apellido1": "", "apellido2": "",
+    "empresa": "", "cargo": "",
+    "dni": "", "fecha_nacimiento": "",
+    "telefono": "", "email": "", "web": "",
+    "direccion": "", "notas": ""
+  },
+  "evento": {
+    "titulo": "", "fecha": "YYYY-MM-DD",
+    "hora_inicio": "HH:MM", "hora_fin": "HH:MM",
+    "ubicacion": "", "descripcion": ""
+  }
+}
+
+Reglas:
+- Rellena solo los campos que encuentres, deja "" si no hay datos.
+- Para fecha del evento: usa el año actual si no se especifica.
+- Si no hay hora fin, suma 1 hora a la de inicio.
+- Si no hay hora inicio, usa "09:00".
+- Infiere inteligentemente aunque los datos no estén etiquetados.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514', max_tokens: 1200,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: imgMime, data: imgB64 } },
+          { type: 'text', text: prompt }
+        ]}]
+      })
+    });
+    if (!res.ok) throw new Error('API ' + res.status);
+    const d = await res.json();
+    const raw = d.content[0]?.text || '';
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Respuesta inesperada de la IA');
+    const p = JSON.parse(m[0]);
+    renderResult(p);
+  } catch(e) {
+    showMsg('err', 'Error al analizar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('anTxt').textContent = 'Analizar de nuevo';
+    document.getElementById('anIco').textContent = '↺';
+    document.getElementById('scanOverlay').classList.remove('on');
+  }
+}
+
+function renderResult(p) {
+  const tipo = p.tipo || 'contacto';
+
+  // detected badge
+  const labels = { contacto: 'Contacto detectado', evento: 'Evento detectado', ambos: 'Contacto + Evento detectados' };
+  const dr = document.getElementById('detRow');
+  dr.innerHTML = '<span style="color:var(--faint)">Detectado:</span> ';
+  if (tipo === 'contacto' || tipo === 'ambos') dr.innerHTML += '<span class="det-badge con">👤 Contacto</span> ';
+  if (tipo === 'evento'   || tipo === 'ambos') dr.innerHTML += '<span class="det-badge cal">📅 Evento</span>';
+
+  // tabs
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  if (tipo === 'contacto' || tipo === 'ambos') {
+    const t = document.createElement('button');
+    t.className = 'tab con'; t.textContent = '👤 Contacto';
+    t.onclick = () => switchMode('con');
+    tabs.appendChild(t);
+  }
+  if (tipo === 'evento' || tipo === 'ambos') {
+    const t = document.createElement('button');
+    t.className = 'tab cal'; t.textContent = '📅 Calendario';
+    t.onclick = () => switchMode('cal');
+    tabs.appendChild(t);
+  }
+
+  // fill contact fields
+  if (p.contacto) {
+    const c = p.contacto;
+    setV('p_nombre', c.nombre); setV('p_ap1', c.apellido1); setV('p_ap2', c.apellido2);
+    setV('p_empresa', c.empresa); setV('p_cargo', c.cargo);
+    setV('p_dni', c.dni); setV('p_bday', c.fecha_nacimiento);
+    setV('p_tel', c.telefono); setV('p_email', c.email); setV('p_web', c.web);
+    setV('p_dir', c.direccion); setV('p_notas', c.notas);
+  }
+
+  // fill event fields
+  if (p.evento) {
+    const e = p.evento;
+    setV('c_title', e.titulo); setV('c_date', e.fecha);
+    setV('c_start', e.hora_inicio); setV('c_end', e.hora_fin);
+    setV('c_loc', e.ubicacion); setV('c_desc', e.descripcion);
+  }
+
+  // show panel, default to primary detected mode
+  document.getElementById('panel').style.display = 'block';
+  const defaultMode = (tipo === 'evento') ? 'cal' : 'con';
+  switchMode(defaultMode);
+
+  showMsg('ok', '✓ Análisis completado. Revisa los datos antes de guardar.');
+}
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.getElementById('viewCal').style.display = mode === 'cal' ? 'block' : 'none';
+  document.getElementById('viewCon').style.display = mode === 'con' ? 'block' : 'none';
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.remove('active');
+    if ((mode === 'cal' && t.classList.contains('cal')) ||
+        (mode === 'con' && t.classList.contains('con'))) t.classList.add('active');
+  });
+}
+
+// ── CALENDAR ────────────────────────────────────────────────────────────────
+function openCalendar() {
+  const title = v('c_title'), date = v('c_date');
+  const start = v('c_start'), end = v('c_end');
+  if (!title || !date) { showMsg('err', 'El título y la fecha son obligatorios.'); return; }
+  const dtS = date.replace(/-/g,'') + 'T' + start.replace(':','') + '00';
+  const dtE = date.replace(/-/g,'') + 'T' + end.replace(':','') + '00';
+  const url = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + encodeURIComponent(title)
+    + '&dates=' + dtS + '/' + dtE
+    + (v('c_loc')  ? '&location=' + encodeURIComponent(v('c_loc'))  : '')
+    + (v('c_desc') ? '&details='  + encodeURIComponent(v('c_desc')) : '');
+  window.open(url, '_blank');
+  showMsg('ok', '✓ Abierto en Google Calendar.');
+}
+
+// ── CONTACTS ────────────────────────────────────────────────────────────────
+async function createContact() {
+  if (!token) { showMsg('inf', '⚠ Conecta primero con Google arriba.'); return; }
+  const fullName = [v('p_nombre'), v('p_ap1'), v('p_ap2')].filter(Boolean).join(' ');
+  if (!fullName) { showMsg('err', 'El nombre es obligatorio.'); return; }
+
+  const btn = document.getElementById('btnCreate');
+  btn.disabled = true; btn.textContent = 'Creando...';
+
+  const body = { names: [{ givenName: v('p_nombre'), familyName: [v('p_ap1'), v('p_ap2')].filter(Boolean).join(' ') }] };
+  if (v('p_tel'))    body.phoneNumbers    = [{ value: v('p_tel'),   type: 'home' }];
+  if (v('p_email'))  body.emailAddresses  = [{ value: v('p_email'), type: 'home' }];
+  if (v('p_empresa') || v('p_cargo')) body.organizations = [{ name: v('p_empresa'), title: v('p_cargo') }];
+  if (v('p_web'))    body.urls            = [{ value: v('p_web') }];
+  if (v('p_dir'))    body.addresses       = [{ formattedValue: v('p_dir'), type: 'home' }];
+  if (v('p_bday')) {
+    const pts = v('p_bday').split('/');
+    if (pts.length === 3) body.birthdays = [{ date: { year: +pts[2], month: +pts[1], day: +pts[0] } }];
+  }
+  const notes = [v('p_dni') ? 'DNI/NIE: ' + v('p_dni') : '', v('p_notas')].filter(Boolean).join(' | ');
+  if (notes) body.biographies = [{ value: notes, contentType: 'TEXT_PLAIN' }];
+
+  try {
+    const r = await fetch('https://people.googleapis.com/v1/people:createContact', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message || 'HTTP ' + r.status); }
+    showMsg('ok', '✓ Contacto "' + fullName + '" creado. Abriendo Google Contacts...');
+    btn.textContent = '✓ Creado';
+    setTimeout(() => window.open('https://contacts.google.com', '_blank'), 800);
+  } catch(e) {
+    showMsg('err', 'Error: ' + e.message);
+    btn.disabled = false; btn.textContent = '✚ Crear en Google Contacts';
+  }
+}
+
+// ── VCF ─────────────────────────────────────────────────────────────────────
+function downloadVcf() {
+  const fullName = [v('p_nombre'), v('p_ap1'), v('p_ap2')].filter(Boolean).join(' ');
+  const notes = [v('p_dni') ? 'DNI/NIE: ' + v('p_dni') : '', v('p_notas')].filter(Boolean).join(' | ');
+  let bday = '';
+  if (v('p_bday')) { const p = v('p_bday').split('/'); if (p.length===3) bday = 'BDAY:' + p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0'); }
+  const lines = ['BEGIN:VCARD','VERSION:3.0','FN:'+fullName,'N:'+(v('p_ap1')||'')+';'+(v('p_nombre')||'')+';;'+(v('p_ap2')||'')+';'];
+  if (v('p_tel'))    lines.push('TEL;TYPE=HOME,VOICE:'+v('p_tel'));
+  if (v('p_email'))  lines.push('EMAIL;TYPE=INTERNET,HOME:'+v('p_email'));
+  if (v('p_empresa'))lines.push('ORG:'+v('p_empresa'));
+  if (v('p_cargo'))  lines.push('TITLE:'+v('p_cargo'));
+  if (v('p_web'))    lines.push('URL:'+v('p_web'));
+  if (v('p_dir'))    lines.push('ADR;TYPE=HOME:;;'+v('p_dir')+';;;;');
+  if (bday)          lines.push(bday);
+  if (notes)         lines.push('NOTE:'+notes);
+  lines.push('END:VCARD');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: (fullName||'contacto')+'.vcf' });
+  a.click(); URL.revokeObjectURL(a.href);
+  showMsg('ok', 'Descargado ' + (fullName||'contacto') + '.vcf');
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+const v  = id => document.getElementById(id)?.value.trim() || '';
+const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+
+function showMsg(type, txt) {
+  const el = document.getElementById('msg');
+  el.className = 'msg ' + type; el.textContent = txt;
+}
+function hideMsg() { document.getElementById('msg').className = 'msg'; }
+
+function reset() {
+  imgB64 = null;
+  drop.classList.remove('has-img');
+  ['dIco','dTitle','dSub'].forEach(id => document.getElementById(id).style.display = '');
+  const img = document.getElementById('prevImg'); img.src = ''; img.style.display = 'none';
+  document.getElementById('fi').value = '';
+  document.getElementById('btnAn').disabled = true;
+  document.getElementById('anTxt').textContent = 'Analizar imagen';
+  document.getElementById('anIco').textContent = '✦';
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('btnCreate').disabled = false;
+  document.getElementById('btnCreate').textContent = '✚ Crear en Google Contacts';
+  hideMsg();
+}
+</script>
+</body>
+</html>
