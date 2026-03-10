@@ -246,6 +246,16 @@ body::before {
     </div>
   </div>
 
+  <!-- API KEY -->
+  <div class="auth-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+    <div style="font-size:10px; font-family:'IBM Plex Mono',monospace; color:var(--faint); text-transform:uppercase; letter-spacing:.6px;">Anthropic API Key</div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="password" id="apiKey" class="finput" placeholder="sk-ant-..." style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:12px;">
+      <button onclick="saveKey()" style="padding:8px 14px; border-radius:7px; border:1px solid var(--border2); background:var(--surface2); color:var(--muted); font-size:12px; cursor:pointer; white-space:nowrap;" onmouseover="this.style.borderColor='var(--amber)';this.style.color='var(--amber)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">Guardar</button>
+    </div>
+    <div style="font-size:10px; color:var(--faint); font-family:'IBM Plex Mono',monospace;">La key se guarda solo en tu navegador · <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--amber); text-decoration:none;">Obtener key →</a></div>
+  </div>
+
   <!-- GOOGLE AUTH -->
   <div class="auth-row">
     <div class="auth-info">
@@ -346,22 +356,50 @@ body::before {
 const CLIENT_ID = '195592023385-uaq0pt71g4uo1gkhbdetltghgkh4nfp3.apps.googleusercontent.com';
 let token = null, tokenClient = null;
 let imgB64 = null, imgMime = 'image/png';
-let currentMode = 'cal'; // 'cal' | 'con'
+let currentMode = 'cal';
+
+// ── API KEY ──────────────────────────────────────────────────────────────────
+function saveKey() {
+  const k = document.getElementById('apiKey').value.trim();
+  if (!k.startsWith('sk-')) { alert('La key debe empezar por sk-ant-...'); return; }
+  localStorage.setItem('ant_key', k);
+  showMsg('ok', '✓ API key guardada permanentemente en este navegador.');
+}
+function getKey() {
+  const stored = localStorage.getItem('ant_key');
+  if (stored) { document.getElementById('apiKey').value = stored; return stored; }
+  return document.getElementById('apiKey').value.trim();
+}
+// Load saved key on startup
+window.addEventListener('DOMContentLoaded', () => {
+  const k = localStorage.getItem('ant_key');
+  if (k) document.getElementById('apiKey').value = k;
+});
 
 // ── GOOGLE OAUTH ────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
+  // Load saved API key
+  const k = localStorage.getItem('ant_key');
+  if (k) document.getElementById('apiKey').value = k;
+
+  // Init Google OAuth with auto-reconnect
   const t = setInterval(() => {
     if (window.google?.accounts?.oauth2) {
       clearInterval(t);
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/contacts',
+        prompt: '',
         callback: r => {
           if (r.error) { showMsg('err', 'Error Google: ' + r.error); return; }
           token = r.access_token;
           setAuth(true);
+          // Auto-refresh before expiry (token lasts ~1h)
+          setTimeout(() => { if (tokenClient) tokenClient.requestAccessToken(); }, 55 * 60 * 1000);
         }
       });
+      // Try silent auto-connect
+      tokenClient.requestAccessToken({ prompt: '' });
     }
   }, 200);
 });
@@ -458,12 +496,15 @@ Reglas:
 - Infiere inteligentemente aunque los datos no estén etiquetados.`;
 
   try {
+    const apiKey = getKey();
+    if (!apiKey) { showMsg('err', 'Introduce tu API key de Anthropic primero.'); btn.disabled=false; document.getElementById('anTxt').textContent='Analizar imagen'; document.getElementById('anIco').textContent='✦'; document.getElementById('scanOverlay').classList.remove('on'); return; }
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'x-api-key': apiKey
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514', max_tokens: 1200,
