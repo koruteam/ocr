@@ -8,20 +8,20 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root {
-  --bg:       #111210;
-  --surface:  #1a1c19;
-  --surface2: #222420;
-  --border:   #2e3029;
-  --border2:  #3a3d35;
-  --text:     #e8e6df;
-  --muted:    #8a8980;
-  --faint:    #4a4c44;
-  --amber:    #d4943a;
-  --amber-l:  rgba(212,148,58,0.12);
-  --teal:     #4aab8c;
-  --teal-l:   rgba(74,171,140,0.12);
-  --red:      #c96060;
-  --red-l:    rgba(201,96,96,0.10);
+  --bg:       #f5f4f0;
+  --surface:  #ffffff;
+  --surface2: #f0efe9;
+  --border:   #dddbd3;
+  --border2:  #c8c6bc;
+  --text:     #1a1917;
+  --muted:    #6b6960;
+  --faint:    #a8a69e;
+  --amber:    #e85220;
+  --amber-l:  rgba(232,82,32,0.10);
+  --teal:     #2e8f72;
+  --teal-l:   rgba(46,143,114,0.10);
+  --red:      #b04040;
+  --red-l:    rgba(176,64,64,0.08);
   --r: 10px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,13 +36,8 @@ body {
   padding: 40px 16px 80px;
 }
 
-/* grain overlay */
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-  pointer-events: none; z-index: 0; opacity: 0.6;
-}
+/* no grain overlay on light theme */
+
 
 .wrap {
   position: relative; z-index: 1;
@@ -109,7 +104,7 @@ body::before {
 .drop-overlay.on { display: block; }
 .scan-beam {
   position: absolute; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent 0%, var(--amber) 40%, #fff 50%, var(--amber) 60%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--amber) 40%, #fff8ee 50%, var(--amber) 60%, transparent 100%);
   box-shadow: 0 0 16px var(--amber);
   animation: beam 1.8s ease-in-out infinite;
 }
@@ -131,15 +126,15 @@ body::before {
 .btn-analyze {
   width: 100%; padding: 14px;
   border-radius: var(--r); border: none;
-  background: var(--amber); color: #1a1400;
+  background: var(--amber); color: #fff;
   font-family: 'IBM Plex Sans', sans-serif;
   font-size: 14px; font-weight: 600;
   cursor: pointer; transition: all .2s;
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.btn-analyze:hover { background: #e0a040; transform: translateY(-1px); box-shadow: 0 8px 28px rgba(212,148,58,.3); }
+.btn-analyze:hover { background: #c44418; transform: translateY(-1px); box-shadow: 0 8px 28px rgba(232,82,32,.25); }
 .btn-analyze:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
-.spin { width: 16px; height: 16px; border: 2px solid rgba(26,20,0,.3); border-top-color: #1a1400; border-radius: 50%; animation: rot .7s linear infinite; }
+.spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: rot .7s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
 
 /* ── STATUS ── */
@@ -206,10 +201,10 @@ body::before {
   cursor: pointer; transition: all .15s;
   display: flex; align-items: center; justify-content: center; gap: 7px;
 }
-.btn-main.cal { background: var(--amber); color: #1a1400; }
-.btn-main.cal:hover { background: #e0a040; transform: translateY(-1px); box-shadow: 0 5px 18px rgba(212,148,58,.3); }
-.btn-main.con { background: var(--teal); color: #071a15; }
-.btn-main.con:hover { transform: translateY(-1px); box-shadow: 0 5px 18px rgba(74,171,140,.3); }
+.btn-main.cal { background: var(--amber); color: #fff; }
+.btn-main.cal:hover { background: #c44418; transform: translateY(-1px); box-shadow: 0 5px 18px rgba(232,82,32,.3); }
+.btn-main.con { background: var(--teal); color: #fff; }
+.btn-main.con:hover { background: #267a60; transform: translateY(-1px); box-shadow: 0 5px 18px rgba(46,143,114,.3); }
 .btn-main:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-sec {
   padding: 11px 16px; border-radius: 8px;
@@ -626,8 +621,21 @@ async function createContact() {
   if (v('p_web'))    body.urls            = [{ value: v('p_web') }];
   if (v('p_dir'))    body.addresses       = [{ formattedValue: v('p_dir'), type: 'home' }];
   if (v('p_bday')) {
-    const pts = v('p_bday').split('/');
-    if (pts.length === 3) body.birthdays = [{ date: { year: +pts[2], month: +pts[1], day: +pts[0] } }];
+    const raw = v('p_bday').trim();
+    let day, month, year;
+    if (raw.includes('/')) {
+      const pts = raw.split('/');
+      // dd/mm/yyyy
+      day = +pts[0]; month = +pts[1]; year = +pts[2];
+    } else if (raw.includes('-')) {
+      const pts = raw.split('-');
+      if (pts[0].length === 4) { // yyyy-mm-dd
+        year = +pts[0]; month = +pts[1]; day = +pts[2];
+      } else { // dd-mm-yyyy
+        day = +pts[0]; month = +pts[1]; year = +pts[2];
+      }
+    }
+    if (day && month && year) body.birthdays = [{ date: { year, month, day } }];
   }
   const notes = [v('p_dni') ? 'DNI/NIE: ' + v('p_dni') : '', v('p_notas')].filter(Boolean).join(' | ');
   if (notes) body.biographies = [{ value: notes, contentType: 'TEXT_PLAIN' }];
